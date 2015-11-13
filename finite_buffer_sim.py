@@ -4,7 +4,7 @@ import random
 import simpy
 import math
 
-RANDOM_SEED = 29
+RANDOM_SEED = None
 SIM_TIME = 1000000
 MU = 1
 
@@ -12,7 +12,7 @@ MU = 1
 
 """ Queue system  """		
 class server_queue:
-	def __init__(self, env, arrival_rate, Packet_Delay, Server_Idle_Periods):
+	def __init__(self, env, arrival_rate, buffer_size, Packet_Delay, Server_Idle_Periods):
 		self.server = simpy.Resource(env, capacity = 1)
 		self.env = env
 		self.queue_len = 0
@@ -21,6 +21,7 @@ class server_queue:
 		self.sum_time_length = 0
 		self.start_idle_time = 0
 		self.arrival_rate = arrival_rate
+		self.queue_capacity = buffer_size
 		self.Packet_Delay = Packet_Delay
 		self.Server_Idle_Periods = Server_Idle_Periods
 		
@@ -55,9 +56,12 @@ class server_queue:
 				idle_period = env.now - self.start_idle_time
 				self.Server_Idle_Periods.addNumber(idle_period)
 				#print("Idle period of length {0} ended".format(idle_period))
-			self.queue_len += 1
-			env.process(self.process_packet(env, new_packet))
-	
+			if self.queue_len < self.queue_capacity:
+				self.queue_len += 1
+				env.process(self.process_packet(env, new_packet))
+			else:
+				self.Packet_Delay.addDroppedPacket()
+
 
 """ Packet class """			
 class Packet:
@@ -69,6 +73,7 @@ class Packet:
 class StatObject:
     def __init__(self):
         self.dataset =[]
+        self.dropped_packets = 0
 
     def addNumber(self,x):
         self.dataset.append(x)
@@ -104,28 +109,36 @@ class StatObject:
             sum = sum + (i - temp)**2
         sum = sum/(len(self.dataset) - 1)
         return math.sqrt(sum)
+    def addDroppedPacket(self):
+    	self.dropped_packets += 1
+    def packetLossProbability(self):
+    	return float(self.dropped_packets) / len(self.dataset) # float to stop int trucation
 
 
 def main():
-	print("Simple queue system model:mu = {0}".format(MU))
-	print ("{0:<9} {1:<9} {2:<9} {3:<9} {4:<9} {5:<9} {6:<9} {7:<9}".format(
-        "Lambda", "Count", "Min", "Max", "Mean", "Median", "Sd", "Utilization"))
+	print("Simple queue system model: mu = {0}".format(MU))
+	print ("{0:<10} {1:<9} {2:<10} {3:<9} {4:<9} {5:<9} {6:<9} {7:<9} {8:<9} {9:<9} {10:<9}".format(
+        "BufferSize", "Lambda", "Pd", "Dropped", "Total", "Min", "Max", "Mean", "Median", "Sd", "Utilization"))
 	random.seed(RANDOM_SEED)
-	for arrival_rate in [0.1, 0.2]:
-		env = simpy.Environment()
-		Packet_Delay = StatObject()
-		Server_Idle_Periods = StatObject()
-		router = server_queue(env, arrival_rate, Packet_Delay, Server_Idle_Periods)
-		env.process(router.packets_arrival(env))
-		env.run(until=SIM_TIME)
-		print ("{0:<9.3f} {1:<9} {2:<9.3f} {3:<9.3f} {4:<9.3f} {5:<9.3f} {6:<9.3f} {7:<9.3f}".format(
-			round(arrival_rate, 3),
-			int(Packet_Delay.count()),
-			round(Packet_Delay.minimum(), 3),
-			round(Packet_Delay.maximum(), 3),
-			round(Packet_Delay.mean(), 3),
-			round(Packet_Delay.median(), 3),
-			round(Packet_Delay.standarddeviation(), 3),
-			round(1-Server_Idle_Periods.sum()/SIM_TIME, 3)))
+	for B in [10, 50]:
+		for arrival_rate in [0.2, 0.4, 0.6, 0.8, 0.9, 0.99]:
+			env = simpy.Environment()
+			Packet_Delay = StatObject()
+			Server_Idle_Periods = StatObject()
+			router = server_queue(env, arrival_rate, B, Packet_Delay, Server_Idle_Periods)
+			env.process(router.packets_arrival(env))
+			env.run(until=SIM_TIME)
+			print ("{0:<10} {1:<9.3f} {2:<10.8f} {3:<9} {4:<9} {5:<9.3f} {6:<9.3f} {7:<9.3f} {8:<9.3f} {9:<9.3f} {10:<9.3f}".format(
+				B,
+				round(arrival_rate, 3),
+				round(Packet_Delay.packetLossProbability(), 8),
+				int(Packet_Delay.dropped_packets),
+				int(Packet_Delay.count()),
+				round(Packet_Delay.minimum(), 3),
+				round(Packet_Delay.maximum(), 3),
+				round(Packet_Delay.mean(), 3),
+				round(Packet_Delay.median(), 3),
+				round(Packet_Delay.standarddeviation(), 3),
+				round(1-Server_Idle_Periods.sum()/SIM_TIME, 3)))
 	
 if __name__ == '__main__': main()

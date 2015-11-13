@@ -1,5 +1,3 @@
-# This is a simpy based  simulation of a M/M/1 queue system
-
 import random
 import simpy
 import math
@@ -32,7 +30,6 @@ class server_queue:
 			yield env.timeout(random.expovariate(MU))
 			latency = env.now - packet.arrival_time
 			self.Packet_Delay.addNumber(latency)
-			#print("Packet number {0} with arrival time {1} latency {2}".format(packet.identifier, packet.arrival_time, latency))
 			self.queue_len -= 1
 			if self.queue_len == 0:
 				self.flag_processing = 0
@@ -49,14 +46,16 @@ class server_queue:
 			self.packet_number += 1
 			  # packet id
 			arrival_time = env.now  
-			#print(self.num_pkt_total, "packet arrival")
-			new_packet = Packet(self.packet_number,arrival_time)
-			if self.flag_processing == 0:
-				self.flag_processing = 1
-				idle_period = env.now - self.start_idle_time
-				self.Server_Idle_Periods.addNumber(idle_period)
-				#print("Idle period of length {0} ended".format(idle_period))
+
 			if self.queue_len < self.queue_capacity:
+				#print(self.num_pkt_total, "packet arrival")
+				new_packet = Packet(self.packet_number,arrival_time)
+				if self.flag_processing == 0:
+					self.flag_processing = 1
+					idle_period = env.now - self.start_idle_time
+					self.Server_Idle_Periods.addNumber(idle_period)
+					#print("Idle period of length {0} ended".format(idle_period))
+
 				self.queue_len += 1
 				env.process(self.process_packet(env, new_packet))
 			else:
@@ -77,48 +76,22 @@ class StatObject:
 
     def addNumber(self,x):
         self.dataset.append(x)
-    def sum(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum
-    def mean(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum/n
-    def maximum(self):
-        return max(self.dataset)
-    def minimum(self):
-        return min(self.dataset)
     def count(self):
-        return len(self.dataset)
-    def median(self):
-        self.dataset.sort()
-        n = len(self.dataset)
-        if n//2 != 0: # get the middle number
-            return self.dataset[n//2]
-        else: # find the average of the middle two numbers
-            return ((self.dataset[n//2] + self.dataset[n//2 + 1])/2)
-    def standarddeviation(self):
-        temp = self.mean()
-        sum = 0
-        for i in self.dataset:
-            sum = sum + (i - temp)**2
-        sum = sum/(len(self.dataset) - 1)
-        return math.sqrt(sum)
+    	return len(self.dataset)
     def addDroppedPacket(self):
     	self.dropped_packets += 1
     def packetLossProbability(self):
-    	return float(self.dropped_packets) / (len(self.dataset) + self.dropped_packets) # float to stop int trucation
+    	return float(self.dropped_packets) / self.total() # float to stop int trucation
+    def total(self):
+    	return len(self.dataset) + self.dropped_packets
 
+def expectedLossProbability(arrival_rate, buffer_size):
+	return 1 - ( float(math.pow(arrival_rate, buffer_size + 1) - 1) / (math.pow(arrival_rate, buffer_size + 2) - 1) )
 
 def main():
 	print("Simple queue system model: mu = {0}".format(MU))
-	print ("{0:<10} {1:<9} {2:<10} {3:<9} {4:<9} {5:<9} {6:<9} {7:<9} {8:<9} {9:<9} {10:<9}".format(
-        "BufferSize", "Lambda", "Pd", "Dropped", "Processed", "Min", "Max", "Mean", "Median", "Sd", "Utilization"))
+	print ("{0:<10} {1:<9} {2:<9} {3:<9} {4:<16} {5:<16} {6:<13} {7:<13}".format(
+        "BufferSize", "Lambda", "Total", "Processed", "SimulatedDropped", "ExpectedDropped", "SimulatedPd", "ExpectedPd"))
 	random.seed(RANDOM_SEED)
 	for B in [10, 50]:
 		for arrival_rate in [0.2, 0.4, 0.6, 0.8, 0.9, 0.99]:
@@ -128,17 +101,18 @@ def main():
 			router = server_queue(env, arrival_rate, B, Packet_Delay, Server_Idle_Periods)
 			env.process(router.packets_arrival(env))
 			env.run(until=SIM_TIME)
-			print ("{0:<10} {1:<9.3f} {2:<10.8f} {3:<9} {4:<9} {5:<9.3f} {6:<9.3f} {7:<9.3f} {8:<9.3f} {9:<9.3f} {10:<9.3f}".format(
+			expected_dropped = int(expectedLossProbability(arrival_rate, B) * Packet_Delay.total())
+			print ("{0:<10} {1:<9.3f} {2:<9} {3:<9} {4:<16} {5:<16} {6:<13.8f} {7:<13.8f}".format(
 				B,
 				round(arrival_rate, 3),
-				round(Packet_Delay.packetLossProbability(), 8),
-				int(Packet_Delay.dropped_packets),
+				int(Packet_Delay.total()),
 				int(Packet_Delay.count()),
-				round(Packet_Delay.minimum(), 3),
-				round(Packet_Delay.maximum(), 3),
-				round(Packet_Delay.mean(), 3),
-				round(Packet_Delay.median(), 3),
-				round(Packet_Delay.standarddeviation(), 3),
-				round(1-Server_Idle_Periods.sum()/SIM_TIME, 3)))
+				int(Packet_Delay.dropped_packets),
+				expected_dropped,
+				round(Packet_Delay.packetLossProbability(), 8),
+				round(expectedLossProbability(arrival_rate, B), 8)
+			))
 	
 if __name__ == '__main__': main()
+
+

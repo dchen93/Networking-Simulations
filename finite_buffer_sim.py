@@ -7,7 +7,6 @@ SIM_TIME = 1000000
 MU = 1
 
 
-
 """ Queue system  """		
 class server_queue:
 	def __init__(self, env, arrival_rate, buffer_size, Packet_Delay, Server_Idle_Periods):

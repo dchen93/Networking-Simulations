@@ -4,7 +4,7 @@ import random
 import simpy
 import math
 
-RANDOM_SEED = 29
+RANDOM_SEED = None
 SIM_TIME = 1000000
 MU = 1
 B = 10
@@ -44,28 +44,26 @@ class server_queue:
 		# packet arrivals 
 		
 		while True:
-		     # Infinite loop for generating packets
+			 # Infinite loop for generating packets
 			yield env.timeout(random.expovariate(self.arrival_rate))
 			  # arrival time of one packet
 
-                        self.total_no_packets += 1
-                        if (self.queue_len < B) {
-                            self.packet_number += 1
-                              # packet id
-                            arrival_time = env.now  
-                            #print(self.num_pkt_total, "packet arrival")
-                            new_packet = Packet(self.packet_number,arrival_time)
-                            if self.flag_processing == 0:
-				self.flag_processing = 1
-				idle_period = env.now - self.start_idle_time
-				self.Server_Idle_Periods.addNumber(idle_period)
+			self.total_no_packets += 1
+			if self.queue_len < B:
+				self.packet_number += 1
+				# packet id
+				arrival_time = env.now  
+				#print(self.num_pkt_total, "packet arrival")
+				new_packet = Packet(self.packet_number,arrival_time)
+				if self.flag_processing == 0:
+					self.flag_processing = 1
+					idle_period = env.now - self.start_idle_time
+					self.Server_Idle_Periods.addNumber(idle_period)
 				#print("Idle period of length {0} ended".format(idle_period))
-                            self.queue_len += 1
-                            env.process(self.process_packet(env, new_packet))
-                            }
-                        else {
-                            self.discards += 1
-                            }
+				self.queue_len += 1
+				env.process(self.process_packet(env, new_packet))
+			else:
+				self.discards += 1
 	
 
 """ Packet class """			
@@ -76,49 +74,49 @@ class Packet:
 		
 
 class StatObject:
-    def __init__(self):
-        self.dataset =[]
+	def __init__(self):
+		self.dataset =[]
 
-    def addNumber(self,x):
-        self.dataset.append(x)
-    def sum(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum
-    def mean(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum/n
-    def maximum(self):
-        return max(self.dataset)
-    def minimum(self):
-        return min(self.dataset)
-    def count(self):
-        return len(self.dataset)
-    def median(self):
-        self.dataset.sort()
-        n = len(self.dataset)
-        if n//2 != 0: # get the middle number
-            return self.dataset[n//2]
-        else: # find the average of the middle two numbers
-            return ((self.dataset[n//2] + self.dataset[n//2 + 1])/2)
-    def standarddeviation(self):
-        temp = self.mean()
-        sum = 0
-        for i in self.dataset:
-            sum = sum + (i - temp)**2
-        sum = sum/(len(self.dataset) - 1)
-        return math.sqrt(sum)
+	def addNumber(self,x):
+		self.dataset.append(x)
+	def sum(self):
+		n = len(self.dataset)
+		sum = 0
+		for i in self.dataset:
+			sum = sum + i
+		return sum
+	def mean(self):
+		n = len(self.dataset)
+		sum = 0
+		for i in self.dataset:
+			sum = sum + i
+		return sum/n
+	def maximum(self):
+		return max(self.dataset)
+	def minimum(self):
+		return min(self.dataset)
+	def count(self):
+		return len(self.dataset)
+	def median(self):
+		self.dataset.sort()
+		n = len(self.dataset)
+		if n//2 != 0: # get the middle number
+			return self.dataset[n//2]
+		else: # find the average of the middle two numbers
+			return ((self.dataset[n//2] + self.dataset[n//2 + 1])/2)
+	def standarddeviation(self):
+		temp = self.mean()
+		sum = 0
+		for i in self.dataset:
+			sum = sum + (i - temp)**2
+		sum = sum/(len(self.dataset) - 1)
+		return math.sqrt(sum)
 
 
 def main():
 	print("Simple queue system model:mu = {0}".format(MU))
 	print ("{0:<9} {1:<9} {2:<9} {3:<9} {4:<9} {5:<9} {6:<9} {7:<9}".format(
-        "Lambda", "Count", "Min", "Max", "Mean", "Median", "Sd", "Utilization", "Pd"))
+		"Lambda", "Count", "Min", "Max", "Mean", "Median", "Sd", "Utilization", "Pd"))
 	random.seed(RANDOM_SEED)
 	for arrival_rate in [0.1, 0.2]:
 		env = simpy.Environment()

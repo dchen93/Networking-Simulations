@@ -1,159 +1,147 @@
-# This is a simpy based  simulation of a M/M/1 queue system
+# Daniel Chen (997415944) & Ittai Shay (998099673)
+# ECS 152A - Ghosal
+# 7 December 2015
+# Project Part 2
 
+import matplotlib.pyplot as pyplot
 import random
 import simpy
 import math
 
-RANDOM_SEED = 29
 SIM_TIME = 1000000
-MU = 1
-B = 10
+SLOT_RATE = 1
+NUM_HOSTS = 10
 
+slot_number = 0
 
+class ethernet_system:
+    def __init__(self, env, slot_period, host_queues):
+        self.env = env
+        self.slot_period = slot_period # time to next slot
+        self.hosts = host_queues
+        self.processed_packets = 0 # number of processed packets
+        self.collisions = 0 # number of slots that experienced a collision
+
+        # now we add the NUM_HOSTS host queue packet arrival simulation threads
+        for i in range(NUM_HOSTS):
+            env.process(self.hosts[i].packets_arrival(self.env))
+
+    def run_system(self,env):
+        global slot_number
+        while True:
+            # figure out which queues want to transmit in this slot
+            counter = 0
+            index = []
+            for i in range(NUM_HOSTS):
+                if self.hosts[i].slot_target == slot_number:
+                    counter += 1
+                    index.append(i)
+
+            if counter > 1: # multiple queues want to transmit, handle collisions
+                self.collisions += 1
+                for i in index:
+                    self.hosts[i].collision_backoff()
+            elif counter == 1: # only one queue wants to transmit, process that packet
+                self.hosts[index[0]].send_packet()
+                self.processed_packets += 1
+
+            yield env.timeout(self.slot_period)
+            slot_number += 1 # move to the next slot
 
 """ Queue system  """       
-class server_queue:
-    def __init__(self, env, arrival_rate, Packet_Delay, Server_Idle_Periods):
-        self.server = simpy.Resource(env, capacity = 1)
+class host_queue:
+    def __init__(self, env, arrival_rate, exponential):
         self.env = env
-        self.queue_len = 0
-        self.flag_processing = 0
-        self.packet_number = 0
-        self.sum_time_length = 0
-        self.start_idle_time = 0
+        self.queue_len = 0 # size of the queue (number of pending packets)
         self.arrival_rate = arrival_rate
-        self.Packet_Delay = Packet_Delay
-        self.Server_Idle_Periods = Server_Idle_Periods
-        self.total_no_packets = 0
-        self.discards = 0
-        
-    def process_packet(self, env, packet):
-        with self.server.request() as req:
-            start = env.now
-            yield req
-            yield env.timeout(random.expovariate(MU))
-            latency = env.now - packet.arrival_time
-            self.Packet_Delay.addNumber(latency)
-            #print("Packet number {0} with arrival time {1} latency {2}".format(packet.identifier, packet.arrival_time, latency))
-            self.queue_len -= 1
-            if self.queue_len == 0:
-                self.flag_processing = 0
-                self.start_idle_time = env.now
-                
+        self.failures = 0 # number of failures/collisions the packet at the front of the queue has experienced
+        self.slot_target = 0 # which slot the queue will try to transmit the packet at the front of the queue
+        self.exponential = exponential # whether to use exponential backoff or linear backoff
+
     def packets_arrival(self, env):
         # packet arrivals 
-        
         while True:
-             # Infinite loop for generating packets
+            # Infinite loop for generating packets
             yield env.timeout(random.expovariate(self.arrival_rate))
-              # arrival time of one packet
 
-            self.total_no_packets += 1
-            if self.queue_len < B:
-                self.packet_number += 1
-                # packet id
-                arrival_time = env.now  
-                #print(self.num_pkt_total, "packet arrival")
-                new_packet = Packet(self.packet_number,arrival_time)
-                if self.flag_processing == 0:
-                    self.flag_processing = 1
-                    idle_period = env.now - self.start_idle_time
-                    self.Server_Idle_Periods.addNumber(idle_period)
-                #print("Idle period of length {0} ended".format(idle_period))
-                self.queue_len += 1
-                env.process(self.process_packet(env, new_packet))
-            else:
-                self.discards += 1
-    
+            # set target slot for first pending packet if queue was empty
+            if self.queue_len == 0:
+                self.reset_target()
 
-""" Packet class """            
-class Packet:
-    def __init__(self, identifier, arrival_time):
-        self.identifier = identifier
-        self.arrival_time = arrival_time
-        
+            self.queue_len += 1
 
-class StatObject:
-    def __init__(self):
-        self.dataset =[]
+    # called when the pending packet collides while trying to process 
+    def collision_backoff(self):
+        if self.exponential:
+            self.slot_target += random.randint(0,2**min(self.failures, 10)) + 1
+        else:
+            self.slot_target += random.randint(0,min(self.failures, 1024)) + 1
 
-    def addNumber(self,x):
-        self.dataset.append(x)
-    def sum(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum
-    def mean(self):
-        n = len(self.dataset)
-        sum = 0
-        for i in self.dataset:
-            sum = sum + i
-        return sum/n
-    def maximum(self):
-        return max(self.dataset)
-    def minimum(self):
-        return min(self.dataset)
-    def count(self):
-        return len(self.dataset)
-    def median(self):
-        self.dataset.sort()
-        n = len(self.dataset)
-        if n//2 != 0: # get the middle number
-            return self.dataset[n//2]
-        else: # find the average of the middle two numbers
-            return ((self.dataset[n//2] + self.dataset[n//2 + 1])/2)
-    def standarddeviation(self):
-        temp = self.mean()
-        sum = 0
-        for i in self.dataset:
-            sum = sum + (i - temp)**2
-        sum = sum/(len(self.dataset) - 1)
-        return math.sqrt(sum)
+        self.failures += 1
 
-class system:
-    def __init__(self, env, arrival_rate, Packet_Delay, Server_Idle_Periods):
-        self.server = simpy.Resource(env, capacity = 1)
-        self.env = env
-        self.queue_len = 0
-        self.flag_processing = 0
-        self.packet_number = 0
-        self.sum_time_length = 0
-        self.start_idle_time = 0
-        self.arrival_rate = arrival_rate
-        self.Packet_Delay = Packet_Delay
-        self.Server_Idle_Periods = Server_Idle_Periods
-        self.total_no_packets = 0
-        self.discards = 0
-        
-    def run_system(self, env, packet):
-        while True:
-            # put stuff here check flags etc
+    # update queue once packet at the front gets processed by ethernet_system
+    def send_packet(self):
+        self.queue_len -= 1
+        if self.queue_len > 0: # update the slot target and failures for the next packet
+            self.reset_target()
 
-            yield #something
-
+    def reset_target(self):
+        global slot_number
+        self.slot_target = slot_number + 1 # target the next slot initially
+        self.failures = 0 # reset failures/collisions to 0
 
 def main():
-    print("Simple queue system model:mu = {0}".format(MU))
-    print ("{0:<9} {1:<9} {2:<9} {3:<9} {4:<9} {5:<9} {6:<9} {7:<9}".format(
-        "Lambda", "Count", "Min", "Max", "Mean", "Median", "Sd", "Utilization", "Pd"))
-    random.seed(RANDOM_SEED)
-    for arrival_rate in [0.1, 0.2]:
-        env = simpy.Environment()
-        Packet_Delay = StatObject()
-        Server_Idle_Periods = StatObject()
-        router = server_queue(env, arrival_rate, Packet_Delay, Server_Idle_Periods)
-        env.process(router.packets_arrival(env))
-        env.run(until=SIM_TIME)
-        print ("{0:<9.3f} {1:<9} {2:<9.3f} {3:<9.3f} {4:<9.3f} {5:<9.3f} {6:<9.3f} {7:<9.3f}".format(
-            round(arrival_rate, 3),
-            int(Packet_Delay.count()),
-            round(Packet_Delay.minimum(), 3),
-            round(Packet_Delay.maximum(), 3),
-            round(Packet_Delay.mean(), 3),
-            round(Packet_Delay.median(), 3),
-            round(Packet_Delay.standarddeviation(), 3),
-            round(1-Server_Idle_Periods.sum()/SIM_TIME, 3)))
+    global slot_number
+    print("Random Access Protocol Simulation")
+    for exponential in [True, False]:
+        pyplot.clf() # clear plot
+        if exponential:
+            print("Exponential Backoff")
+        else:
+            print("Linear Backoff")
+
+        print("{0:<9} {1:<12} {2:<9} {3:<9} {4:<9}".format(
+            "Lambda", "Throughput", "Processed", "Slots", "Collisions"))
+
+        x = [] # x axis will hold lambda
+        y = [] # y axis will hold throuhput
+
+        for arrival_rate in [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09]:
+            slot_number = 0 # reset slot number for each new lambda
+            env = simpy.Environment()
+            host_queues = [host_queue(env, arrival_rate, exponential) for i in range(NUM_HOSTS)] 
+            ethernet = ethernet_system(env, SLOT_RATE, host_queues)
+            env.process(ethernet.run_system(env))
+            env.run(until=SIM_TIME)
+
+            throughput = round(float(ethernet.processed_packets) / slot_number, 5)
+            x.append(arrival_rate)
+            y.append(throughput)
+
+            print("{0:<9.3f} {1:<12.5f} {2:<9} {3:<9} {4:<9}".format(
+                round(arrival_rate,3),
+                throughput,
+                ethernet.processed_packets,
+                slot_number,
+                ethernet.collisions
+            ))
+
+
+        pyplot.axis([0, 0.1, 0, 1])    
+        pyplot.xticks([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09])
+        pyplot.yticks([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+        pyplot.xlabel('Lambda')
+        pyplot.ylabel('Throughput')
+        pyplot.plot(x,y, color='blue', marker='o')
+
+        for i in range(9):
+            pyplot.annotate(s = str(y[i]), xy = (x[i], y[i]), xycoords='data', rotation=90, textcoords='offset points', xytext=(-5, 50))
+
+        if exponential:
+            pyplot.title('Exponential Backoff: Lambda vs Throughput')
+            pyplot.savefig('exponential.png')
+        else:
+            pyplot.title('Linear Backoff: Lambda vs Throughput')
+            pyplot.savefig('linear.png')
     
 if __name__ == '__main__': main()
